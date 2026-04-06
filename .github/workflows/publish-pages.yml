@@ -1,0 +1,99 @@
+# Publishes versioned Docsify docs (v*/ only) to GitHub Pages on each push to main.
+
+name: Publish documentation to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: general-purpose-runner
+    outputs:
+      publish: ${{ steps.stage.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage site (versioned docs + landing only)
+        id: stage
+        run: |
+          set -euo pipefail
+          SITE="_site"
+          rm -rf "$SITE"
+          mkdir -p "$SITE"
+          touch "$SITE/.nojekyll"
+
+          shopt -s nullglob
+          versions=(v*/)
+          if [ ${#versions[@]} -eq 0 ]; then
+            echo "::notice::No top-level directories matching v*/ — no versioned docs to publish; skipping upload and deploy."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          for d in "${versions[@]}"; do
+            cp -a "$d" "$SITE/"
+          done
+
+          mapfile -t sorted < <(printf '%s\n' "${versions[@]}" | sed 's:/$::' | sort -Vr)
+          latest="${sorted[0]}"
+
+          if [[ ! -f pages/index.html.template ]]; then
+            echo "::error::pages/index.html.template is missing"
+            exit 1
+          fi
+
+          cp pages/favicon.png "$SITE/"
+
+          LIST_TMP=$(mktemp)
+          {
+            echo '<ul>'
+            for v in "${sorted[@]}"; do
+              printf '  <li><a href="./%s/">%s</a>' "$v" "$v"
+              if [ "$v" = "$latest" ]; then
+                printf '%s\n' '<span class="latest" aria-label="latest release">(latest)</span>'
+              fi
+              printf '%s\n' '</li>'
+            done
+            echo '</ul>'
+          } > "$LIST_TMP"
+
+          python3 - "$LIST_TMP" <<'PY'
+          from pathlib import Path
+          import sys
+
+          list_path = sys.argv[1]
+          template = Path("pages/index.html.template").read_text(encoding="utf-8")
+          version_list = Path(list_path).read_text(encoding="utf-8").strip()
+          out = template.replace("<!-- DOCS_VERSION_LIST -->", version_list)
+          Path("_site/index.html").write_text(out, encoding="utf-8")
+          PY
+
+          rm -f "$LIST_TMP"
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.stage.outputs.publish == 'true'
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.publish == 'true'
+    runs-on: general-purpose-runner
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
