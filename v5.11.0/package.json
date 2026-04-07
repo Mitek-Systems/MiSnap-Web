@@ -1,0 +1,9 @@
+{
+  "name": "misnap-web-sdk-docs",
+  "version": "5.11.0",
+  "description": "MiSnap Web SDK Documentation",
+  "private": true,
+  "scripts": {
+    "serve": "npx docsify-cli serve . -p 3001 -o"
+  }
+}
