@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: general-purpose-runner
+    runs-on: ubuntu-latest
     outputs:
       publish: ${{ steps.stage.outputs.publish }}
     steps:
@@ -90,7 +90,7 @@ jobs:
   deploy:
     needs: build
     if: needs.build.outputs.publish == 'true'
-    runs-on: general-purpose-runner
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
